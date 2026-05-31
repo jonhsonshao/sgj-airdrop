@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ERA 空投</title>
+<title>SGJ 空投</title>
 <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
 <style>
 body{max-width:400px;margin:40px auto;padding:0 20px;background:#f5f7fa;font-family:Arial}
@@ -16,14 +16,14 @@ button{width:100%;padding:16px;border-radius:12px;background:#007bff;color:white
 </head>
 <body>
 <div class="box">
-  <h2>NewEra 空投</h2>
+  <h2>SGJ 空投</h2>
   <p class="desc">24小时1次，每次1枚</p>
   <button id="claim">领取空投</button>
   <div id="tip"></div>
 </div>
 
 <script>
-const AIRDROP_CONTRACT = "0xeCA3C2EE3D44a9D30702396813D5A8d9e7ab616D";
+const AIRDROP_CONTRACT = "0x6dbD5c1Fea50292156E92f9cA4Fd87DcFc32Ddd0";
 const ABI = [{"inputs":[],"name":"claimAirdrop","outputs":[],"stateMutability":"payable","type":"function"}];
 const FEE = ethers.utils.parseEther("0.0005");
 
