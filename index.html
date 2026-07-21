@@ -3,35 +3,132 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SGJ 空投</title>
 <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
 <style>
 body{max-width:400px;margin:40px auto;padding:0 20px;background:#f5f7fa;font-family:Arial}
 .box{background:#fff;padding:25px;border-radius:16px;box-shadow:0 4px 12px rgba(0,0,0,0.05)}
 h2{margin-bottom:10px}
-.desc{color:#666;margin-bottom:25px;font-size:14px}
-button{width:100%;padding:16px;border-radius:12px;background:#007bff;color:white;border:none;font-size:16px}
+.desc{color:#666;margin-bottom:15px;font-size:14px}
+.info-item{padding:8px 0;font-size:14px;color:#333;border-bottom:1px solid #eee;}
+button{width:100%;padding:16px;border-radius:12px;color:white;border:none;font-size:16px;margin-top:12px}
+#claim{background:#007bff;}
+#burn{background:#dc3545;}
+button:disabled{background:#999 !important;cursor:not-allowed;}
 #tip{margin-top:20px;font-size:14px}
 </style>
+<title>NewEra 空投</title>
 </head>
 <body>
 <div class="box">
-  <h2>SGJ 空投</h2>
-  <p class="desc">24小时1次，每次1枚</p>
-  <button id="claim">领取空投</button>
+  <h2>SDD 空投</h2>
+  <p class="desc">24小时1次，每次1枚，单人最多领取100次</p>
+
+  <div class="info-item">领取次数：<span id="claimedCount">--</span></div>
+  <div class="info-item">上次领取时间：<span id="lastTime">--</span></div>
+  <div class="info-item">下次可领取倒计时：<span id="countdown">--</span></div>
+  <div class="info-item">空投活动状态：<span id="expireStatus">--</span></div>
+
+  <button id="claim" disabled>领取空投</button>
+  <button id="burn" disabled>销毁合约剩余NewEra（仅过期可用）</button>
   <div id="tip"></div>
 </div>
 
 <script>
-const AIRDROP_CONTRACT = "0x6Bf07c068A04761346D0Bd218262Dc33a5e69277";
-const ABI = [{"inputs":[],"name":"claimAirdrop","outputs":[],"stateMutability":"payable","type":"function"}];
+const AIRDROP_CONTRACT = "0xE9834dE408fC7BE11A1755f4d7d264D3F19a7333";
+const ABI = [
+  {"inputs":[{"name":"_account","type":"address"}],"name":"claimTimes","outputs":[{"type":"uint32"}],"stateMutability":"view","type":"function"},
+  {"inputs":[{"name":"_account","type":"address"}],"name":"lastClaim","outputs":[{"type":"uint64"}],"stateMutability":"view","type":"function"},
+  {"inputs":[],"name":"isAirdropExpired","outputs":[{"type":"bool"}],"stateMutability":"view","type":"function"},
+  {"inputs":[],"name":"claimAirdrop","outputs":[],"stateMutability":"payable","type":"function"},
+  {"inputs":[],"name":"burnRemainingToken","outputs":[],"stateMutability":"nonpayable","type":"function"}
+];
 const FEE = ethers.utils.parseEther("0.0005");
+const MAX_CLAIM = 100;
+const COOLDOWN_SEC = 86400;
+let countTimer = null;
 
-document.getElementById("claim").onclick = async () => {
-  let btn = document.getElementById("claim");
-  let tip = document.getElementById("tip");
-  btn.disabled = true;
-  btn.innerText = "处理中...";
+const btnClaim = document.getElementById("claim");
+const btnBurn = document.getElementById("burn");
+const tip = document.getElementById("tip");
+const claimedCountEl = document.getElementById("claimedCount");
+const lastTimeEl = document.getElementById("lastTime");
+const countdownEl = document.getElementById("countdown");
+const expireStatusEl = document.getElementById("expireStatus");
+
+function clearCountTimer(){
+  if(countTimer) clearInterval(countTimer);
+  countTimer = null;
+}
+
+async function loadUserInfo(signer) {
+  clearCountTimer();
+  const addr = await signer.getAddress();
+  const contract = new ethers.Contract(AIRDROP_CONTRACT, ABI, signer.provider);
+
+  // 判断活动是否过期
+  const expired = await contract.isAirdropExpired();
+  if(expired){
+    expireStatusEl.innerText = "已结束（过期）";
+    btnClaim.disabled = true;
+    btnBurn.disabled = false;
+    countdownEl.innerText = "活动已结束";
+    return;
+  }else{
+    expireStatusEl.innerText = "进行中";
+    btnBurn.disabled = true;
+  }
+
+  const count = await contract.claimTimes(addr);
+  const lastTs = await contract.lastClaim(addr);
+  const num = Number(count.toString());
+  claimedCountEl.innerText = num + "/" + MAX_CLAIM;
+
+  let canClaim = false;
+  const ts = Number(lastTs.toString());
+
+  if (ts === 0) {
+    lastTimeEl.innerText = "从未领取";
+    countdownEl.innerText = "可立即领取";
+    canClaim = true;
+  } else {
+    lastTimeEl.innerText = new Date(ts * 1000).toLocaleString();
+    function updateCd(){
+      const now = Math.floor(Date.now() / 1000);
+      const endCd = ts + COOLDOWN_SEC;
+      const diff = endCd - now;
+      if(diff <= 0){
+        countdownEl.innerText = "冷却结束，可以领取";
+        canClaim = true;
+        btnClaim.disabled = false;
+        clearCountTimer();
+        return;
+      }
+      canClaim = false;
+      const d = Math.floor(diff / 86400);
+      const h = Math.floor((diff % 86400) / 3600);
+      const m = Math.floor((diff % 3600) / 60);
+      const s = diff % 60;
+      countdownEl.innerText = `${d}天 ${h}时 ${m}分 ${s}秒`;
+      btnClaim.disabled = true;
+    }
+    updateCd();
+    countTimer = setInterval(updateCd,1000);
+  }
+
+  if(num >= MAX_CLAIM){
+    countdownEl.innerText = "已达领取上限100次";
+    canClaim = false;
+    clearCountTimer();
+  }
+
+  btnClaim.disabled = !canClaim;
+}
+
+// 领取空投
+btnClaim.onclick = async () => {
+  btnClaim.disabled = true;
+  btnClaim.innerText = "处理中...";
+  tip.innerText = "";
 
   try {
     const provider = new ethers.providers.Web3Provider(window.ethereum);
@@ -39,21 +136,57 @@ document.getElementById("claim").onclick = async () => {
     const signer = provider.getSigner();
     const contract = new ethers.Contract(AIRDROP_CONTRACT, ABI, signer);
 
-    tip.innerText = "发送交易...";
+    tip.innerText = "发送交易中，请在钱包确认...";
     const tx = await contract.claimAirdrop({
       value: FEE,
-      gasLimit: 300000  // 关键修改：从200000提高到300000
+      gasLimit: 300000
     });
-
     await tx.wait();
     tip.innerText = "✅ 领取成功！";
+    await loadUserInfo(signer);
   } catch(e) {
-    tip.innerText = "❌ 失败：" + e.message.substr(0,50);
+    tip.innerText = "❌ 失败：" + e.message.substr(0, 60);
   }
 
-  btn.disabled = false;
-  btn.innerText = "领取空投";
+  btnClaim.innerText = "领取空投";
 };
+
+// 销毁剩余代币
+btnBurn.onclick = async () => {
+  btnBurn.disabled = true;
+  btnBurn.innerText = "处理中...";
+  tip.innerText = "";
+
+  try {
+    const provider = new ethers.providers.Web3Provider(window.ethereum);
+    await provider.send("eth_requestAccounts", []);
+    const signer = provider.getSigner();
+    const contract = new ethers.Contract(AIRDROP_CONTRACT, ABI, signer);
+
+    tip.innerText = "销毁交易确认中...";
+    const tx = await contract.burnRemainingToken({gasLimit:300000});
+    await tx.wait();
+    tip.innerText = "✅ 销毁成功，剩余代币已打入黑洞";
+    await loadUserInfo(signer);
+  } catch(e) {
+    tip.innerText = "❌ 失败：" + e.message.substr(0, 60);
+  }
+
+  btnBurn.innerText = "销毁合约剩余NewEra（仅过期可用）";
+};
+
+// 自动连接钱包加载数据
+(async function autoLoad() {
+  if (!window.ethereum) return;
+  try {
+    const provider = new ethers.providers.Web3Provider(window.ethereum);
+    const accounts = await provider.listAccounts();
+    if (accounts.length > 0) {
+      const signer = provider.getSigner();
+      await loadUserInfo(signer);
+    }
+  } catch (err) {}
+})();
 </script>
 </body>
 </html>
